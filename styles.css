@@ -534,6 +534,16 @@ body {
     animation: fadeIn 0.5s ease-out;
 }
 
+@keyframes pulse {
+    0% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.1); opacity: 0.7; }
+    100% { transform: scale(1); opacity: 1; }
+}
+
+.drone-marker {
+    z-index: 1000 !important;
+}
+
 
 /* Scrollbar Styling */
 
