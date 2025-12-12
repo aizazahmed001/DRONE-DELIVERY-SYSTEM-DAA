@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Drone Delivery Optimization System</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <h1>🚁 Disaster Relief Drone Delivery System</h1>
+                <p>Design & Analysis of Algorithms - Assignment 3</p>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <!-- Left Panel - Controls -->
+            <div class="left-panel">
+                <div class="card">
+                    <h2>⚙️ Configuration</h2>
+
+                    <!-- Location Selection -->
+                    <div class="section">
+                        <h3>📍 Select Disaster Area</h3>
+                        <select id="locationSelect" class="input-field">
+                            <option value="pakistan">Pakistan (2005 Earthquake Region)</option>
+                            <option value="islamabad">Islamabad, Pakistan</option>
+                            <option value="lahore">Lahore, Pakistan</option>
+                            <option value="karachi">Karachi, Pakistan</option>
+                            <option value="custom">Custom Location</option>
+                        </select>
+                    </div>
+
+                    <!-- Drone Configuration -->
+                    <div class="section">
+                        <h3>🚁 Drone Fleet</h3>
+                        <div class="input-group">
+                            <label>Number of Drones:</label>
+                            <input type="number" id="numDrones" value="3" min="1" max="20" class="input-field">
+                        </div>
+                        <div class="input-group">
+                            <label>Battery Capacity (km):</label>
+                            <input type="number" id="batteryCapacity" value="180" min="50" max="500" class="input-field">
+                        </div>
+                        <div class="input-group">
+                            <label>Payload Capacity (units):</label>
+                            <input type="number" id="payloadCapacity" value="80" min="20" max="200" class="input-field">
+                        </div>
+                    </div>
+
+                    <!-- Zone Configuration -->
+                    <div class="section">
+                        <h3>📦 Relief Zones</h3>
+                        <div class="input-group">
+                            <label>Number of Zones:</label>
+                            <input type="number" id="numZones" value="10" min="3" max="50" class="input-field">
+                        </div>
+                        <button id="generateZones" class="btn btn-secondary">Generate Random Zones</button>
+                    </div>
+
+                    <!-- Actions -->
+                    <div class="section">
+                        <button id="optimizeBtn" class="btn btn-primary">
+                            <span>🚀 Optimize Routes</span>
+                        </button>
+                        <button id="clearBtn" class="btn btn-danger">
+                            <span>🗑️ Clear All</span>
+                        </button>
+                    </div>
+
+                    <!-- Manual Zone Addition -->
+                    <div class="section">
+                        <h3>➕ Add Zone Manually</h3>
+                        <p class="help-text">Click on the map to add zones</p>
+                        <div class="input-group">
+                            <label>Priority:</label>
+                            <select id="zonePriority" class="input-field">
+                                <option value="1">🔴 Critical (P1)</option>
+                                <option value="2">🟡 Moderate (P2)</option>
+                                <option value="3">🟢 Low (P3)</option>
+                            </select>
+                        </div>
+                        <div class="input-group">
+                            <label>Demand (units):</label>
+                            <input type="number" id="zoneDemand" value="30" min="5" max="100" class="input-field">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Results Panel -->
+                <div class="card" id="resultsCard" style="display: none;">
+                    <h2>📊 Optimization Results</h2>
+                    <div id="resultsContent"></div>
+                </div>
+            </div>
+
+            <!-- Right Panel - Map -->
+            <div class="right-panel">
+                <div class="card map-container">
+                    <div id="map"></div>
+                </div>
+
+                <!-- Legend -->
+                <div class="card legend">
+                    <h3>🗺️ Legend</h3>
+                    <div class="legend-items">
+                        <div class="legend-item">
+                            <span class="legend-icon base">🏠</span>
+                            <span>Drone Base</span>
+                        </div>
+                        <div class="legend-item">
+                            <span class="legend-icon critical">●</span>
+                            <span>Critical Zone (P1)</span>
+                        </div>
+                        <div class="legend-item">
+                            <span class="legend-icon moderate">●</span>
+                            <span>Moderate Zone (P2)</span>
+                        </div>
+                        <div class="legend-item">
+                            <span class="legend-icon low">●</span>
+                            <span>Low Priority Zone (P3)</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Performance Stats -->
+        <div class="stats-bar" id="statsBar" style="display: none;">
+            <div class="stat-item">
+                <span class="stat-label">Execution Time:</span>
+                <span class="stat-value" id="execTime">0 ms</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Total Distance:</span>
+                <span class="stat-value" id="totalDist">0 km</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Zones Served:</span>
+                <span class="stat-value" id="zonesServed">0/0</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Critical Served:</span>
+                <span class="stat-value" id="criticalServed">0</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Avg Battery Usage:</span>
+                <span class="stat-value" id="batteryUsage">0%</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div id="loadingOverlay" style="display: none;">
+        <div class="loading-spinner"></div>
+        <p>Optimizing drone routes...</p>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="algorithm.js"></script>
+    <script src="app.js"></script>
+</body>
+
+</html>
