@@ -1,6 +1,6 @@
 /**
  * DRONE DELIVERY OPTIMIZATION ALGORITHM
- * Implementation of Greedy + Nearest Neighbor TSP + 2-Opt
+ * Implementation of Greedy + Nearest Neighbor TSP
  * 
  * Time Complexity: O(k × n²)
  * Space Complexity: O(n²)
