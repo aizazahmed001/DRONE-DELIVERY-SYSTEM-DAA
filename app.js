@@ -9,7 +9,9 @@ let optimizer;
 let baseMarker;
 let zoneMarkers = [];
 let routePolylines = [];
+let droneMarkers = []; // New: Track animated drone markers
 let isAddingZone = false;
+let animationActive = false; // Flag to prevent multiple animations
 
 // Location presets
 const locationPresets = {
@@ -31,6 +33,9 @@ const droneColors = [
     '#2563eb', '#7c3aed', '#db2777', '#ea580c', '#65a30d',
     '#0891b2', '#4f46e5', '#be123c', '#c026d3', '#0d9488'
 ];
+
+// Animation settings
+const ANIMATION_SPEED = 50; // ms per km (adjust for faster/slower)
 
 /**
  * Initialize the application
@@ -236,8 +241,14 @@ async function optimizeRoutes() {
         return;
     }
 
-    // Clear previous routes
+    if (animationActive) {
+        showToast('Animation already in progress!', 'warning');
+        return;
+    }
+
+    // Clear previous routes and markers
     clearRoutes();
+    clearDroneMarkers();
 
     // Show loading
     document.getElementById('loadingOverlay').style.display = 'flex';
@@ -265,15 +276,182 @@ async function optimizeRoutes() {
 
         // Display results
         displayResults(results);
-        visualizeRoutes(results);
         updateStats(results);
 
-        showToast('Routes optimized successfully!', 'success');
+        // Visualize and animate routes
+        animationActive = true;
+        visualizeAndAnimateRoutes(results);
+
+        showToast('Routes optimized! Watch the drones in action.', 'success');
     } catch (error) {
         console.error('Optimization error:', error);
         document.getElementById('loadingOverlay').style.display = 'none';
         showToast('Error during optimization. Check console.', 'error');
     }
+}
+
+/**
+ * Visualize and animate routes on map
+ */
+function visualizeAndAnimateRoutes(results) {
+    results.drones.forEach((drone, idx) => {
+        if (drone.route.length < 2) return;
+
+        const color = droneColors[idx % droneColors.length];
+        const coordinates = drone.route.map(zone => [zone.lat, zone.lng]);
+
+        // Add return to base
+        coordinates.push([optimizer.baseLocation.lat, optimizer.baseLocation.lng]);
+
+        // Create initial dashed polyline
+        const polyline = L.polyline(coordinates, {
+            color: color,
+            weight: 3,
+            opacity: 0.5,
+            dashArray: '10, 5'
+        }).addTo(map);
+
+        polyline.bindPopup(`
+            <div style="text-align: center;">
+                <h3 style="margin: 0 0 8px 0; color: ${color};">Drone ${drone.id} Route</h3>
+                <p style="margin: 4px 0;"><strong>Distance:</strong> ${drone.totalDistance.toFixed(2)} km</p>
+                <p style="margin: 4px 0;"><strong>Zones:</strong> ${drone.route.length - 1}</p>
+            </div>
+        `);
+
+        routePolylines.push(polyline);
+
+        // Create drone marker
+        const droneIcon = L.divIcon({
+            className: 'drone-marker',
+            html: `<div style="
+                font-size: 1.5rem;
+                color: ${color};
+                text-shadow: 0 0 5px ${color};
+                animation: pulse 1s infinite;
+            ">🚁</div>`,
+            iconSize: [30, 30],
+            iconAnchor: [15, 15]
+        });
+
+        const droneMarker = L.marker([coordinates[0][0], coordinates[0][1]], { icon: droneIcon }).addTo(map);
+        droneMarker.bindPopup(`<h3 style="color: ${color};">Drone ${drone.id}</h3>`);
+
+        droneMarkers.push(droneMarker);
+
+        // Start animation after a short delay for staggering
+        setTimeout(() => {
+            animateDrone(droneMarker, coordinates, color, () => {
+                // On complete: solidify polyline and add arrows
+                polyline.setStyle({ opacity: 0.7, dashArray: null });
+                addDirectionalArrows(coordinates, color);
+                if (droneMarkers.every(m => !m.isAnimating)) {
+                    animationActive = false;
+                    updateZoneMarkers(results);
+                    showToast('All drones have completed their routes!', 'success');
+                }
+            });
+        }, idx * 500); // Stagger start by 500ms per drone
+    });
+}
+
+/**
+ * Animate a single drone along its route
+ */
+function animateDrone(marker, coordinates, color, onComplete) {
+    let segmentIndex = 0;
+    let progress = 0;
+    let totalDistance = 0;
+
+    // Calculate total route distance for timing
+    for (let i = 0; i < coordinates.length - 1; i++) {
+        const dist = calculateHaversineDistance(coordinates[i], coordinates[i + 1]);
+        totalDistance += dist;
+    }
+
+    function animate() {
+        if (segmentIndex >= coordinates.length - 1) {
+            marker.isAnimating = false;
+            onComplete();
+            return;
+        }
+
+        const start = coordinates[segmentIndex];
+        const end = coordinates[segmentIndex + 1];
+        const segmentDist = calculateHaversineDistance(start, end);
+
+        // Time for this segment (ms)
+        const segmentTime = (segmentDist / totalDistance) * (totalDistance * ANIMATION_SPEED);
+
+        // Interpolate position
+        const lat = start[0] + (end[0] - start[0]) * progress;
+        const lng = start[1] + (end[1] - start[1]) * progress;
+
+        marker.setLatLng([lat, lng]);
+
+        progress += 0.01; // Adjust for smoothness (smaller = smoother but slower)
+
+        if (progress >= 1) {
+            progress = 0;
+            segmentIndex++;
+        }
+
+        requestAnimationFrame(animate);
+    }
+
+    marker.isAnimating = true;
+    animate();
+}
+
+/**
+ * Calculate Haversine distance between two points (in km) - helper for animation
+ */
+function calculateHaversineDistance(p1, p2) {
+    const R = 6371; // Earth's radius in km
+    const dLat = (p2[0] - p1[0]) * Math.PI / 180;
+    const dLng = (p2[1] - p1[1]) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(p1[0] * Math.PI / 180) * Math.cos(p2[0] * Math.PI / 180) *
+        Math.sin(dLng / 2) * Math.sin(dLng / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+}
+
+/**
+ * Add directional arrows to route (after animation)
+ */
+function addDirectionalArrows(coordinates, color) {
+    for (let i = 0; i < coordinates.length - 1; i++) {
+        const midLat = (coordinates[i][0] + coordinates[i + 1][0]) / 2;
+        const midLng = (coordinates[i][1] + coordinates[i + 1][1]) / 2;
+
+        const arrowIcon = L.divIcon({
+            className: 'arrow-marker',
+            html: `<div style="color: ${color}; font-size: 16px; transform: rotate(${calculateAngle(coordinates[i], coordinates[i + 1])}deg);">➤</div>`,
+            iconSize: [20, 20],
+            iconAnchor: [10, 10]
+        });
+
+        const arrow = L.marker([midLat, midLng], { icon: arrowIcon }).addTo(map);
+        routePolylines.push(arrow);
+    }
+}
+
+/**
+ * Calculate angle between two points
+ */
+function calculateAngle(from, to) {
+    const dx = to[1] - from[1];
+    const dy = to[0] - from[0];
+    return Math.atan2(dy, dx) * (180 / Math.PI) + 90;
+}
+
+/**
+ * Clear drone markers
+ */
+function clearDroneMarkers() {
+    droneMarkers.forEach(marker => map.removeLayer(marker));
+    droneMarkers = [];
 }
 
 /**
@@ -354,76 +532,6 @@ function displayResults(results) {
 }
 
 /**
- * Visualize routes on map
- */
-function visualizeRoutes(results) {
-    clearRoutes();
-
-    results.drones.forEach((drone, idx) => {
-        if (drone.route.length < 2) return;
-
-        const color = droneColors[idx % droneColors.length];
-        const coordinates = drone.route.map(zone => [zone.lat, zone.lng]);
-
-        // Add return to base
-        coordinates.push([optimizer.baseLocation.lat, optimizer.baseLocation.lng]);
-
-        // Create polyline
-        const polyline = L.polyline(coordinates, {
-            color: color,
-            weight: 3,
-            opacity: 0.7,
-            dashArray: '10, 5'
-        }).addTo(map);
-
-        polyline.bindPopup(`
-            <div style="text-align: center;">
-                <h3 style="margin: 0 0 8px 0; color: ${color};">Drone ${drone.id} Route</h3>
-                <p style="margin: 4px 0;"><strong>Distance:</strong> ${drone.totalDistance.toFixed(2)} km</p>
-                <p style="margin: 4px 0;"><strong>Zones:</strong> ${drone.route.length - 1}</p>
-            </div>
-        `);
-
-        routePolylines.push(polyline);
-
-        // Add directional arrows
-        addDirectionalArrows(coordinates, color);
-    });
-
-    // Update zone markers to show served status
-    updateZoneMarkers(results);
-}
-
-/**
- * Add directional arrows to route
- */
-function addDirectionalArrows(coordinates, color) {
-    for (let i = 0; i < coordinates.length - 1; i++) {
-        const midLat = (coordinates[i][0] + coordinates[i + 1][0]) / 2;
-        const midLng = (coordinates[i][1] + coordinates[i + 1][1]) / 2;
-
-        const arrowIcon = L.divIcon({
-            className: 'arrow-marker',
-            html: `<div style="color: ${color}; font-size: 16px; transform: rotate(${calculateAngle(coordinates[i], coordinates[i + 1])}deg);">➤</div>`,
-            iconSize: [20, 20],
-            iconAnchor: [10, 10]
-        });
-
-        const arrow = L.marker([midLat, midLng], { icon: arrowIcon }).addTo(map);
-        routePolylines.push(arrow);
-    }
-}
-
-/**
- * Calculate angle between two points
- */
-function calculateAngle(from, to) {
-    const dx = to[1] - from[1];
-    const dy = to[0] - from[0];
-    return Math.atan2(dy, dx) * (180 / Math.PI) + 90;
-}
-
-/**
  * Update zone markers to show served status
  */
 function updateZoneMarkers(results) {
@@ -485,6 +593,8 @@ function clearZones() {
 function clearAll() {
     clearRoutes();
     clearZones();
+    clearDroneMarkers();
+    animationActive = false;
 
     if (baseMarker) {
         map.removeLayer(baseMarker);
